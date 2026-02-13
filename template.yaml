@@ -1,0 +1,100 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Scheduled backup of Neon PostgreSQL databases to S3
+
+Parameters:
+  Schedule:
+    Type: String
+    Default: "cron(0 2 * * ? *)"
+    Description: EventBridge schedule expression (default 2 AM UTC daily)
+  BackupRetentionDays:
+    Type: Number
+    Default: 30
+    Description: Days to retain backups in S3 before automatic deletion
+
+Globals:
+  Function:
+    Timeout: 900
+    MemorySize: 512
+    EphemeralStorage:
+      Size: 1024
+
+Resources:
+  # ---- S3 bucket for backup storage ----
+  BackupBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldBackups
+            Status: Enabled
+            ExpirationInDays: !Ref BackupRetentionDays
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # ---- Secrets Manager secret (update after deploy with real URLs) ----
+  DatabaseSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: neon-db-backup-urls
+      Description: >-
+        JSON object containing Neon database connection URLs for backup.
+        Update this secret after deployment with your actual database URLs.
+      SecretString: !Sub |
+        {
+          "databases": [
+            {
+              "name": "my-app-prod",
+              "url": "postgresql://user:password@ep-example.us-east-2.aws.neon.tech/neondb?sslmode=require"
+            }
+          ]
+        }
+
+  # ---- Lambda function (Docker image with pg_dump) ----
+  BackupFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      Architectures:
+        - x86_64
+      Environment:
+        Variables:
+          S3_BUCKET: !Ref BackupBucket
+          SECRET_NAME: !Ref DatabaseSecret
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref BackupBucket
+        - Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Ref DatabaseSecret
+      Events:
+        ScheduledBackup:
+          Type: Schedule
+          Properties:
+            Schedule: !Ref Schedule
+            Description: Trigger Neon DB backup
+            Enabled: true
+    Metadata:
+      Dockerfile: Dockerfile
+      DockerContext: .
+      DockerTag: latest
+
+Outputs:
+  BackupBucketName:
+    Description: S3 bucket storing the database backups
+    Value: !Ref BackupBucket
+  SecretArn:
+    Description: Secrets Manager secret ARN — update with your real DB URLs
+    Value: !Ref DatabaseSecret
+  BackupFunctionArn:
+    Description: Backup Lambda function ARN
+    Value: !GetAtt BackupFunction.Arn

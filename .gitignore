@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+.aws-sam/
+.env.test
+tests/backup_output/

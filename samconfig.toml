@@ -1,0 +1,10 @@
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "neon-db-backup"
+resolve_s3 = true
+s3_prefix = "neon-db-backup"
+region = "us-east-1"
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = true
+resolve_image_repos = true
