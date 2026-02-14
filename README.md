@@ -17,13 +17,25 @@ Neon has point-in-time restore, but it's tied to your Neon project. If you want 
 
 ```
 EventBridge (cron)
-    └─▶ Lambda (Docker: Python 3.12 + pg_dump 16)
+    └─▶ Lambda (Docker: Python 3.12 + pg_dump 15)
             ├─ Reads database URLs from Secrets Manager
             ├─ Runs: pg_dump | gzip  (for each database)
             └─ Uploads to S3: {db-name}/{timestamp}.sql.gz
 ```
 
 The Lambda fetches connection URLs from a single Secrets Manager secret, runs `pg_dump` piped through `gzip` for each database, uploads the result to an encrypted S3 bucket, then cleans up. If any backup fails, the Lambda raises so CloudWatch can alert you.
+
+### ⚠️ PostgreSQL Version Compatibility
+
+This project uses **PostgreSQL 15 client tools** (latest available in AWS Lambda AL2023). PostgreSQL's `pg_dump` enforces strict version compatibility:
+
+- ✅ Works with: PostgreSQL 14, 15, 16 (same major or one version older)
+- ❌ Fails with: PostgreSQL 17+ (`pg_dump: error: aborting because of server version mismatch`)
+
+**For Neon databases running PostgreSQL 17:** This Lambda will fail due to pg_dump version mismatch. Consider these alternatives:
+1. **Use GitHub Actions instead** — See [neon/neon-multiple-db-s3-backups](https://github.com/neondatabase/neon-multiple-db-s3-backups) for a CI/CD approach with flexible tooling
+2. **Wait for AL2023 to include PostgreSQL 17** — Update the Dockerfile when available
+3. **Fork this repo** — Build PostgreSQL 17 from source in the Dockerfile (adds ~2 min to build time)
 
 ## S3 Layout
 
