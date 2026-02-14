@@ -17,7 +17,7 @@ Neon has point-in-time restore, but it's tied to your Neon project. If you want 
 
 ```
 EventBridge (cron)
-    └─▶ Lambda (Docker: Python 3.12 + pg_dump 15)
+    └─▶ Lambda (Docker: Python 3.12 + pg_dump 17)
             ├─ Reads database URLs from Secrets Manager
             ├─ Runs: pg_dump | gzip  (for each database)
             └─ Uploads to S3: {db-name}/{timestamp}.sql.gz
@@ -25,17 +25,12 @@ EventBridge (cron)
 
 The Lambda fetches connection URLs from a single Secrets Manager secret, runs `pg_dump` piped through `gzip` for each database, uploads the result to an encrypted S3 bucket, then cleans up. If any backup fails, the Lambda raises so CloudWatch can alert you.
 
-### ⚠️ PostgreSQL Version Compatibility
+### PostgreSQL Version Compatibility
 
-This project uses **PostgreSQL 15 client tools** (latest available in AWS Lambda AL2023). PostgreSQL's `pg_dump` enforces strict version compatibility:
+This project ships **pre-built PostgreSQL 17 client binaries** (`pg_dump`, `pg_restore`, `libpq.so.5`) compiled on Amazon Linux 2023 for ARM64. These are bundled in `bin/postgres-17.8/` and copied into the Lambda container at build time.
 
-- ✅ Works with: PostgreSQL 14, 15, 16 (same major or one version older)
-- ❌ Fails with: PostgreSQL 17+ (`pg_dump: error: aborting because of server version mismatch`)
-
-**For Neon databases running PostgreSQL 17:** This Lambda will fail due to pg_dump version mismatch. Consider these alternatives:
-1. **Use GitHub Actions instead** — See [neon/neon-multiple-db-s3-backups](https://github.com/neondatabase/neon-multiple-db-s3-backups) for a CI/CD approach with flexible tooling
-2. **Wait for AL2023 to include PostgreSQL 17** — Update the Dockerfile when available
-3. **Fork this repo** — Build PostgreSQL 17 from source in the Dockerfile (adds ~2 min to build time)
+- Works with: PostgreSQL 15, 16, 17 (pg_dump can dump same or older major versions)
+- To upgrade: build new binaries on AL2023 (see [Upgrading pg_dump](#upgrading-pg_dump) below)
 
 ## S3 Layout
 
@@ -176,7 +171,7 @@ Everything is defined in `template.yaml` (AWS SAM / CloudFormation):
 |---|---|
 | **S3 Bucket** | Stores backups. AES-256 encryption, all public access blocked, lifecycle policy auto-deletes after N days. |
 | **Secrets Manager Secret** | Holds database connection URLs. Update after deploy with your real Neon URLs. |
-| **Lambda Function** | Docker container (Python 3.12 + PostgreSQL 16 client). Runs `pg_dump \| gzip` and uploads to S3. 15-minute timeout, 512 MB memory, 1 GB ephemeral storage. |
+| **Lambda Function** | Docker container (Python 3.12 + PostgreSQL 17 client). Runs `pg_dump \| gzip` and uploads to S3. 15-minute timeout, 512 MB memory, 1 GB ephemeral storage. |
 | **EventBridge Rule** | Triggers the Lambda on a cron schedule. |
 
 ## Cost
@@ -191,15 +186,40 @@ This is extremely cheap to run:
 
 ```
 ├── handler.py          # Lambda function — the entire backup logic
-├── Dockerfile          # Lambda container image (Python 3.12 + pg_dump 16)
+├── Dockerfile          # Lambda container image (Python 3.12 + pg_dump 17)
 ├── template.yaml       # SAM/CloudFormation infrastructure
 ├── samconfig.toml      # SAM deploy configuration
 ├── requirements.txt    # Python dependencies (just boto3)
+├── bin/postgres-17.8/  # Pre-built PostgreSQL 17 binaries for AL2023 ARM64
+│   ├── pg_dump
+│   ├── pg_restore
+│   └── libpq.so.5
 ├── .env.test           # Local test database URL (not committed)
 └── tests/
     ├── test_local.py   # Local test runner (mocks AWS, runs real pg_dump)
     └── init.sql        # Sample seed data for a test database
 ```
+
+## Upgrading pg_dump
+
+When a new PostgreSQL major version is released, rebuild the client binaries on Amazon Linux 2023:
+
+```bash
+docker run --rm -v $(pwd)/bin:/output amazonlinux:2023 bash -c '
+  dnf install -y gcc make readline-devel zlib-devel openssl-devel tar gzip wget
+  wget -q https://ftp.postgresql.org/pub/source/v17.8/postgresql-17.8.tar.gz
+  tar xzf postgresql-17.8.tar.gz
+  cd postgresql-17.8
+  ./configure --with-ssl=openssl --without-icu --quiet
+  make -j$(nproc) -s
+  mkdir -p /output/postgres-17.8
+  cp src/bin/pg_dump/pg_dump /output/postgres-17.8/
+  cp src/bin/pg_restore/pg_restore /output/postgres-17.8/
+  cp src/interfaces/libpq/libpq.so.5 /output/postgres-17.8/
+'
+```
+
+Then update the `COPY` paths in `Dockerfile` and rebuild with `sam build`.
 
 ## License
 

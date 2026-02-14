@@ -16,7 +16,7 @@ Single-file Lambda (`handler.py`) that:
 
 PostgreSQL connection params (password, sslmode) are passed via libpq environment variables (`PGPASSWORD`, `PGSSLMODE`), not CLI flags — `pg_dump` doesn't accept `--sslmode` as a flag.
 
-The Docker image (`Dockerfile`) is based on the AWS Lambda Python 3.12 runtime with PostgreSQL 16 client tools installed from PGDG.
+The Docker image (`Dockerfile`) is based on the AWS Lambda Python 3.12 runtime with pre-built PostgreSQL 17 client binaries (`bin/postgres-17.8/`) compiled on Amazon Linux 2023 for ARM64.
 
 ## Commands
 
@@ -29,7 +29,7 @@ Reads `DATABASE_URL` from `.env.test` (or override inline: `DATABASE_URL="..." p
 ### Deploy
 ```bash
 sam build
-sam deploy              # uses samconfig.toml defaults (stack: neon-db-backup, us-east-1)
+sam deploy --region eu-central-1  # stack: neon-db-backup
 ```
 After first deploy, update the Secrets Manager secret with real Neon database URLs.
 
