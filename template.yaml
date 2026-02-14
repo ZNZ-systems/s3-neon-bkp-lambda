@@ -63,7 +63,7 @@ Resources:
     Properties:
       PackageType: Image
       Architectures:
-        - x86_64
+        - arm64
       Environment:
         Variables:
           S3_BUCKET: !Ref BackupBucket
