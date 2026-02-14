@@ -1,17 +1,15 @@
 FROM public.ecr.aws/lambda/python:3.12
 
-# Install gzip and PostgreSQL 16 client tools from AL2023 repos
-# For PG 17 server compatibility: pg_dump 16 is close enough for most backups
-# For strict version matching, update this to pg_dump 17 when available in AL2023
-RUN dnf install -y gzip postgresql16 && \
-    dnf clean all
+# Install gzip and PostgreSQL 15 client tools
+RUN dnf install -y \
+    gzip \
+    postgresql15-contrib \
+    && dnf clean all
 
-# Ensure pg_dump is on PATH
-ENV PATH="/usr/pgsql-16/bin:${PATH}"
+# Copy requirements and handler
+COPY requirements.txt ${LAMBDA_TASK_ROOT}/
+RUN pip install -r ${LAMBDA_TASK_ROOT}/requirements.txt --target "${LAMBDA_TASK_ROOT}"
 
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY handler.py ./
+COPY handler.py ${LAMBDA_TASK_ROOT}/
 
 CMD ["handler.lambda_handler"]

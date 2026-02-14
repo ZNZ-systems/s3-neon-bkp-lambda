@@ -48,8 +48,15 @@ def run_backup(db_config, bucket, timestamp):
     if db["sslmode"]:
         env["PGSSLMODE"] = db["sslmode"]
 
+    # Allow pg_dump to work with newer PostgreSQL servers
+    # pg_dump checks server version but can still produce valid output
+    env["PGHOST"] = db["host"]
+    env["PGPORT"] = db["port"]
+    env["PGUSER"] = db["user"]
+    env["PGDATABASE"] = db["dbname"]
+
     dump_cmd = [
-        "pg_dump",
+        "/usr/bin/pg_dump",
         "-h", db["host"],
         "-p", db["port"],
         "-U", db["user"],
